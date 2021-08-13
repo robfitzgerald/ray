@@ -1,3 +1,4 @@
+import json
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import logging
 import queue
@@ -46,7 +47,7 @@ class PolicyServerInput(ThreadingMixIn, HTTPServer, InputReader):
     """
 
     @PublicAPI
-    def __init__(self, ioctx, address, port, idle_timeout=3.0):
+    def __init__(self, ioctx, address, port, idle_timeout=3.0, use_pickle=True):
         """Create a PolicyServerInput.
 
         This class implements rllib.offline.InputReader, and can be used with
@@ -63,6 +64,8 @@ class PolicyServerInput(ThreadingMixIn, HTTPServer, InputReader):
             ioctx (IOContext): IOContext provided by RLlib.
             address (str): Server addr (e.g., "localhost").
             port (int): Server port (e.g., 9900).
+            idle_timeout (float): time (seconds)
+            use_pickle (bool): expect a pickled JSON payload from client (default=True)
         """
 
         self.rollout_worker = ioctx.worker
@@ -88,7 +91,7 @@ class PolicyServerInput(ThreadingMixIn, HTTPServer, InputReader):
         # Create a request handler that receives commands from the clients
         # and sends data and metrics into the queues.
         handler = _make_handler(self.rollout_worker, self.samples_queue,
-                                self.metrics_queue)
+                                self.metrics_queue, use_pickle)
         HTTPServer.__init__(self, (address, port), handler)
 
         logger.info("Starting connector server at {}:{}".format(address, port))
@@ -123,7 +126,7 @@ class PolicyServerInput(ThreadingMixIn, HTTPServer, InputReader):
             self.samples_queue.put(SampleBatch())
 
 
-def _make_handler(rollout_worker, samples_queue, metrics_queue):
+def _make_handler(rollout_worker, samples_queue, metrics_queue, use_pickle):
     # Only used in remote inference mode. We must create a new rollout worker
     # then since the original worker doesn't have the env properly wrapped in
     # an ExternalEnv interface.
@@ -163,7 +166,8 @@ def _make_handler(rollout_worker, samples_queue, metrics_queue):
         def do_POST(self):
             content_len = int(self.headers.get("Content-Length"), 0)
             raw_body = self.rfile.read(content_len)
-            parsed_input = pickle.loads(raw_body)
+            parsed_input = pickle.loads(raw_body) if use_pickle else json.loads(raw_body)
+
             try:
                 response = self.execute_command(parsed_input)
                 self.send_response(200)
