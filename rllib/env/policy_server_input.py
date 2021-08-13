@@ -172,7 +172,8 @@ def _make_handler(rollout_worker, samples_queue, metrics_queue, use_pickle):
                 response = self.execute_command(parsed_input)
                 self.send_response(200)
                 self.end_headers()
-                self.wfile.write(pickle.dumps(response))
+                response_payload = pickle.dumps(response) if use_pickle else json.dumps(response)
+                self.wfile.write(response_payload)
             except Exception:
                 self.send_error(500, traceback.format_exc())
 
